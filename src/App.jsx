@@ -58,6 +58,7 @@ export default function App() {
   const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
   const [generatedPromptText, setGeneratedPromptText] = useState('');
   const [isPromptCopied, setIsPromptCopied] = useState(false);
+  const [editorDraft, setEditorDraft] = useState(null);
 
   const loadData = async (silent = false) => {
     try {
@@ -280,6 +281,41 @@ Aliran Kerja:
     } catch (err) {
       console.error('Save headline error:', err);
       showToast(`Ralat menyimpan: ${err.message}`);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const openLibraryEditor = (item) => {
+    const script = item['Final_Script'] || item['Script'] || '';
+    setEditorDraft({
+      ...item,
+      Hook_Type: item['Hook_Type'] || '',
+      Hook: item['Hook'] || '',
+      Headline: item['Headline'] || '',
+      Subheadline: item['Subheadline'] || '',
+      Angle: item['Angle'] || '',
+      Final_Script: script,
+      Caption: item['Caption'] || '',
+      Hashtags: item['Hashtags'] || '',
+      Status: item['Status'] || 'Draft',
+    });
+  };
+
+  const handleSaveLibraryEditor = async () => {
+    if (!editorDraft) return;
+    const videoId = editorDraft['Video_ID'] || editorDraft['id'];
+    setUpdatingId(videoId);
+    try {
+      await postUpdateScript(editorDraft);
+      setLibrary((prev) => prev.map((item) =>
+        (item['Video_ID'] || item['id']) === videoId ? editorDraft : item
+      ));
+      setEditorDraft(null);
+      showToast(`Perubahan ${videoId} berjaya disimpan.`);
+    } catch (err) {
+      console.error('Save library record error:', err);
+      showToast(`Gagal menyimpan ${videoId}: ${err.message}`);
     } finally {
       setUpdatingId(null);
     }
@@ -571,325 +607,126 @@ Aliran Kerja:
                 TAB 2: OUTPUT LIBRARY (SEMAKAN, EDITING, & KELULUSAN SKRIP)
                 ======================================================== */}
             {activeTab === 'library' && (
-              <div className="space-y-6">
-                {/* Search & Filter Bar */}
-                <div className="bg-slate-800/70 border border-slate-700/80 rounded-2xl p-4 sm:p-5 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4">
-                  {/* Status Pills */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-400 font-medium mr-1">Status:</span>
+              <div className="space-y-5">
+                <div className="flex flex-col gap-4 rounded-2xl border border-slate-700 bg-slate-800/70 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="mr-1 text-xs font-medium text-slate-400">Status:</span>
                     {['ALL', 'Draft', 'Approved', 'Posted'].map((status) => (
-                      <button
-                        key={status}
-                        onClick={() => setLibraryFilterStatus(status)}
-                        className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
-                          libraryFilterStatus === status
-                            ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
-                            : 'bg-slate-700/50 text-slate-400 hover:text-slate-200'
-                        }`}
-                      >
+                      <button key={status} onClick={() => setLibraryFilterStatus(status)}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${libraryFilterStatus === status ? 'bg-blue-600 text-white' : 'bg-slate-700/60 text-slate-400 hover:text-white'}`}>
                         {status === 'ALL' ? 'Semua' : status}
                       </button>
                     ))}
                   </div>
-
-                  {/* Search input in Library */}
-                  <div className="relative w-full sm:w-72">
-                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="text"
-                      value={librarySearch}
-                      onChange={(e) => setLibrarySearch(e.target.value)}
-                      placeholder="Cari Video ID, Headline, Skrip..."
-                      className="w-full bg-slate-900 border border-slate-700 text-slate-200 placeholder-slate-500 rounded-xl pl-9 pr-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
+                  <div className="relative w-full sm:w-80">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input value={librarySearch} onChange={(e) => setLibrarySearch(e.target.value)}
+                      placeholder="Cari Video ID, produk, headline..."
+                      className="w-full rounded-xl border border-slate-700 bg-slate-900 py-2 pl-9 pr-3 text-sm text-slate-100 placeholder-slate-500 focus:border-blue-500 focus:outline-none" />
                   </div>
                 </div>
 
-                {/* Library Output Cards Grid */}
-                {}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="flex items-center gap-2 text-sm font-semibold tracking-wide text-slate-200">
+                  <Film className="h-4 w-4 text-slate-400" />
+                  SENARAI VIDEO KANDUNGAN
+                  <span className="rounded-full bg-slate-700 px-2.5 py-0.5 text-xs text-slate-300">{filteredLibrary.length} VIDEO</span>
+                </div>
+
+                <div className="space-y-3">
                   {filteredLibrary.map((item, idx) => {
                     const videoId = item['Video_ID'] || `VID-${idx}`;
                     const productId = item['Product_ID'] || '-';
+                    const product = products.find((p) => String(p['Product ID'] || p['id'] || '') === String(productId));
+                    const productName = product?.['Produk_Name'] || product?.['Produk_Name_Full'] || product?.['name'] || productId;
+                    const headline = item['Headline'] || 'Headline belum diisi';
+                    const script = item['Final_Script'] || item['Script'] || '';
                     const status = item['Status'] || 'Draft';
-                    const hookType = item['Hook_Type'] || 'Direct Angle';
-                    const hook = item['Hook'] || '';
-                    const angle = item['Angle'] || 'Penyelesaian Utama';
-                    const headline = item['Headline'] || '';
-                    const subheadline = item['Subheadline'] || '';
-                    const script = item['Final_Script'] && item['Final_Script'].trim() !== '' 
-                      ? item['Final_Script'] 
-                      : item['Script'] || '';
-                    const caption = item['Caption'] || '';
-                    const hashtags = item['Hashtags'] || '';
-                    const createdAt = item['Created_At'] || 'Baru';
-
-                    // Word count computation & V3 range compliance
-                    const wordCount = getWordCount(script);
-                    const isWordCountOptimal = wordCount >= 120 && wordCount <= 140;
-
+                    const words = getWordCount(script);
+                    const qaPass = words >= 120 && words <= 140;
+                    const statusClass = status === 'Posted' ? 'bg-purple-100 text-purple-700' : status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700';
                     const isUpdating = updatingId === videoId;
-
                     return (
-                      <div
-                        key={videoId}
-                        className={`bg-slate-800/80 border rounded-2xl p-5 shadow-lg flex flex-col justify-between transition ${
-                          status === 'Posted'
-                            ? 'border-purple-500/50 ring-1 ring-purple-500/20'
-                            : status === 'Approved'
-                            ? 'border-emerald-500/50 ring-1 ring-emerald-500/20'
-                            : 'border-slate-700/80'
-                        }`}
-                      >
-                        <div className="space-y-4">
-                          {/* Card Header & Status Dropdown */}
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1.5">
-                                <span className="text-xs font-mono font-bold text-blue-400">
-                                  {videoId}
-                                </span>
-                                <span className="text-[10px] px-2 py-0.5 rounded bg-slate-700/80 text-slate-300 font-mono">
-                                  PROD: {productId}
-                                </span>
-                              </div>
+                      <article key={videoId} className="rounded-2xl border border-slate-700 bg-slate-800/80 p-4 shadow-sm sm:p-5">
+                        <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2 text-xs">
+                              <span className="rounded bg-slate-700 px-2 py-1 font-mono font-semibold text-slate-100">{videoId}</span>
+                              <span className="rounded-full bg-slate-700/70 px-2.5 py-1 text-slate-300">{productId}</span>
+                              <span className="text-slate-400">• {item['Hook_Type'] || 'Video'} – {productName}</span>
                             </div>
-
-                            {/* Status Dropdown */}
-                            <div className="flex items-center gap-1.5">
-                              {isUpdating && <RefreshCw className="w-3 h-3 text-blue-400 animate-spin" />}
-                              <select
-                                value={status}
-                                onChange={(e) => handleStatusChange(item, e.target.value)}
-                                disabled={isUpdating}
-                                className={`text-xs font-semibold px-2.5 py-1 rounded-xl border appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${
-                                  status === 'Posted'
-                                    ? 'bg-purple-500/10 text-purple-400 border-purple-500/30'
-                                    : status === 'Approved'
-                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                                    : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                                }`}
-                              >
-                                <option value="Draft" className="bg-slate-900 text-amber-400">Draft</option>
-                                <option value="Approved" className="bg-slate-900 text-emerald-400">Approved</option>
-                                <option value="Posted" className="bg-slate-900 text-purple-400">Posted</option>
-                              </select>
+                            <h3 className="font-semibold leading-snug text-slate-100">{headline}</h3>
+                            <p className="line-clamp-1 text-sm italic text-slate-400">{item['Hook'] || item['Subheadline'] || script || 'Belum ada preview kandungan.'}</p>
+                            <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-400">
+                              <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{item['Created_At'] || 'Tarikh tidak tersedia'}</span>
+                              <span className={`rounded border px-2 py-0.5 font-semibold ${qaPass ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-amber-300 bg-amber-50 text-amber-700'}`}>QA: {qaPass ? 'PASS' : `${words} perkataan`}</span>
                             </div>
                           </div>
-
-                          {/* Editable Headline & Subheadline Block */}
-                          <div className="p-3 bg-slate-900/70 border border-slate-700/70 rounded-xl space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                                Headline & Subheadline (Boleh Sunting)
-                              </span>
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  onClick={() => handleSaveHeadlineSubheadline(item)}
-                                  disabled={isUpdating}
-                                  title="Simpan Tajuk ke Sheets"
-                                  className="inline-flex items-center gap-1 text-[11px] text-slate-300 hover:text-white px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 transition"
-                                >
-                                  <Save className="w-3 h-3" />
-                                  <span>Simpan</span>
-                                </button>
-                                <button
-                                  onClick={() => handleCopyAction(`head-${videoId}`, `${headline}\n${subheadline}`)}
-                                  className="inline-flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 px-2 py-0.5 rounded bg-blue-950/40 hover:bg-blue-900/40 border border-blue-800/40 transition"
-                                >
-                                  {copiedKey === `head-${videoId}` ? (
-                                    <>
-                                      <Check className="w-3 h-3 text-emerald-400" />
-                                      <span className="text-emerald-400">Disalin!</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Copy className="w-3 h-3" />
-                                      <span>Salin Headline & Subheadline</span>
-                                    </>
-                                  )}
-                                </button>
-                              </div>
-                            </div>
-
-                            <input
-                              type="text"
-                              value={headline}
-                              onChange={(e) => handleLibraryFieldChange(videoId, 'Headline', e.target.value)}
-                              placeholder="Masukkan Headline..."
-                              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white font-semibold focus:outline-none focus:border-blue-500"
-                            />
-                            <input
-                              type="text"
-                              value={subheadline}
-                              onChange={(e) => handleLibraryFieldChange(videoId, 'Subheadline', e.target.value)}
-                              placeholder="Masukkan Subheadline..."
-                              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-blue-500"
-                            />
-                          </div>
-
-                          {/* Metadata Tags */}
-                          <div className="flex flex-wrap gap-2 text-xs">
-                            <span className="px-2.5 py-1 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center gap-1.5">
-                              <Tag className="w-3 h-3" />
-                              Hook: {hookType}
-                            </span>
-                            <span className="px-2.5 py-1 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20 flex items-center gap-1.5">
-                              <TrendingUp className="w-3 h-3" />
-                              Angle: {angle}
-                            </span>
-                          </div>
-
-                          {/* Hook Callout Box */}
-                          {hook && (
-                            <div className="p-3 bg-blue-950/40 rounded-xl border border-blue-800/40 text-xs">
-                              <span className="text-blue-400 font-bold uppercase tracking-wider block text-[10px] mb-1">
-                                HOOK TEKS UTAMA
-                              </span>
-                              <p className="text-slate-200 font-medium italic">"{hook}"</p>
-                            </div>
-                          )}
-
-                          {/* Voice-Over Script Box with Word Count Checker */}
-                          <div className="space-y-1.5">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                                  <FileText className="w-3.5 h-3.5 text-blue-400" />
-                                  Skrip Voice-Over
-                                </span>
-                                {/* Word Count Badge */}
-                                <span
-                                  className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold border ${
-                                    isWordCountOptimal
-                                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                                      : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                                  }`}
-                                  title={isWordCountOptimal ? 'Lulus V3 (120-140 perkataan)' : 'Sasaran V3: 120-140 perkataan'}
-                                >
-                                  {wordCount} pp {isWordCountOptimal ? '✓ Lulus V3' : '⚠️ Amaran'}
-                                </span>
-                              </div>
-
-                              <button
-                                onClick={() => handleCopyAction(`script-${videoId}`, script)}
-                                className="inline-flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 font-medium px-2 py-1 rounded bg-slate-700/50 hover:bg-slate-700 transition"
-                              >
-                                {copiedKey === `script-${videoId}` ? (
-                                  <>
-                                    <Check className="w-3 h-3 text-emerald-400" />
-                                    <span className="text-emerald-400">Disalin!</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Copy className="w-3 h-3" />
-                                    <span>Salin Skrip</span>
-                                  </>
-                                )}
-                              </button>
-                            </div>
-                            <div className="p-3 bg-slate-900 rounded-xl border border-slate-700/80 font-mono text-xs text-slate-300 whitespace-pre-line leading-relaxed max-h-48 overflow-y-auto">
-                              {script || 'Tiada skrip dijana.'}
-                            </div>
-                          </div>
-
-                          {/* Caption & Hashtags Section with Combined and Individual Copy */}
-                          <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 space-y-3 text-xs">
-                            <div className="flex items-center justify-between pb-1 border-b border-slate-800/80">
-                              <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                                Kapsyen & Tagar (Hashtags)
-                              </span>
-                              <button
-                                onClick={() => handleCopyAction(`combo-${videoId}`, `${caption}\n\n${hashtags}`.trim())}
-                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-400 hover:text-sky-300 px-2 py-0.5 rounded bg-sky-950/40 hover:bg-sky-900/40 border border-sky-800/40 transition"
-                              >
-                                {copiedKey === `combo-${videoId}` ? (
-                                  <>
-                                    <Check className="w-3 h-3 text-emerald-400" />
-                                    <span className="text-emerald-400">Disalin!</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Copy className="w-3 h-3" />
-                                    <span>Salin Caption & Tagar</span>
-                                  </>
-                                )}
-                              </button>
-                            </div>
-
-                            {/* Caption item */}
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex-1">
-                                <span className="text-slate-500 text-[10px] font-bold block uppercase mb-0.5">
-                                  Kapsyen
-                                </span>
-                                <p className="text-slate-300 leading-snug">{caption || '-'}</p>
-                              </div>
-                              {caption && (
-                                <button
-                                  onClick={() => handleCopyAction(`caption-${videoId}`, caption)}
-                                  title="Salin Kapsyen Sahaja"
-                                  className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800 transition"
-                                >
-                                  {copiedKey === `caption-${videoId}` ? (
-                                    <Check className="w-3 h-3 text-emerald-400" />
-                                  ) : (
-                                    <Copy className="w-3 h-3" />
-                                  )}
-                                </button>
-                              )}
-                            </div>
-
-                            {/* Hashtags item */}
-                            {hashtags && (
-                              <div className="flex items-start justify-between gap-2 pt-1 border-t border-slate-800/60">
-                                <div className="flex-1">
-                                  <span className="text-slate-500 text-[10px] font-bold block uppercase mb-0.5">
-                                    Tagar (Maks 7)
-                                  </span>
-                                  <p className="text-blue-400 font-mono text-[11px] leading-tight">{hashtags}</p>
-                                </div>
-                                <button
-                                  onClick={() => handleCopyAction(`hash-${videoId}`, hashtags)}
-                                  title="Salin Tagar Sahaja"
-                                  className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800 transition"
-                                >
-                                  {copiedKey === `hash-${videoId}` ? (
-                                    <Check className="w-3 h-3 text-emerald-400" />
-                                  ) : (
-                                    <Copy className="w-3 h-3" />
-                                  )}
-                                </button>
-                              </div>
-                            )}
+                          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                            <button onClick={() => handleCopyAction(`vo-${videoId}`, script)} disabled={!script}
+                              className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-600 disabled:opacity-40">
+                              {copiedKey === `vo-${videoId}` ? 'Disalin!' : 'Salin VO'}
+                            </button>
+                            <select value={status} onChange={(e) => handleStatusChange(item, e.target.value)} disabled={isUpdating}
+                              className={`rounded-lg border px-2.5 py-2 text-xs font-semibold ${statusClass}`}>
+                              <option value="Draft">Draft</option><option value="Approved">Approved</option><option value="Posted">Posted</option>
+                            </select>
+                            <button onClick={() => openLibraryEditor(item)}
+                              className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-5 py-2.5 text-xs font-bold tracking-wide text-white hover:bg-blue-700">
+                              BUKA <span aria-hidden="true">→</span>
+                            </button>
                           </div>
                         </div>
-
-                        {/* Card Footer */}
-                        <div className="pt-4 mt-4 border-t border-slate-700/60 flex items-center justify-between text-xs text-slate-400">
-                          <span className="flex items-center gap-1 text-[11px]">
-                            <Clock className="w-3 h-3" />
-                            {createdAt}
-                          </span>
-
-                          <div className="flex items-center gap-2">
-                            <span className="text-[11px] text-slate-500">
-                              Status semasa: <strong className="text-slate-300">{status}</strong>
-                            </span>
-                          </div>
-                        </div>
-                      </div>
+                      </article>
                     );
                   })}
                 </div>
 
                 {filteredLibrary.length === 0 && (
-                  <div className="text-center py-16 bg-slate-800/30 rounded-2xl border border-slate-800">
-                    <Film className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-                    <p className="text-slate-400 font-medium">Tiada skrip dijumpai dalam Output Library.</p>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Pilih produk di tab "Katalog Produk" dan gunakan "Jana Arahan Batch" untuk memulakan tugas.
-                    </p>
+                  <div className="rounded-2xl border border-slate-700 bg-slate-800/40 py-16 text-center">
+                    <Film className="mx-auto mb-3 h-10 w-10 text-slate-500" />
+                    <p className="font-medium text-slate-300">Tiada video sepadan dengan carian.</p>
+                  </div>
+                )}
+
+                {editorDraft && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-labelledby="editor-title">
+                    <div className="flex max-h-[95vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
+                      <div className="flex items-center justify-between border-b border-slate-700 px-5 py-4">
+                        <div><h2 id="editor-title" className="font-semibold text-white">Edit {editorDraft['Video_ID']}</h2><p className="mt-1 text-xs text-slate-400">Perubahan disimpan ke Google Sheets.</p></div>
+                        <button onClick={() => setEditorDraft(null)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white" aria-label="Tutup"><X className="h-5 w-5" /></button>
+                      </div>
+                      <div className="grid gap-4 overflow-y-auto p-5 sm:grid-cols-2">
+                        {[
+                          ['Headline', 'Headline', 'text'], ['Subheadline', 'Subheadline', 'text'],
+                          ['Hook_Type', 'Jenis Hook', 'text'], ['Angle', 'Angle', 'text'],
+                          ['Hook', 'Hook / ayat pembuka', 'textarea'], ['Final_Script', 'Skrip Voice-Over', 'textarea'],
+                          ['Caption', 'Caption', 'textarea'], ['Hashtags', 'Hashtags', 'textarea'],
+                        ].map(([field, label, type]) => (
+                          <label key={field} className={`space-y-1.5 text-xs font-medium text-slate-300 ${type === 'textarea' ? 'sm:col-span-2' : ''}`}>
+                            <span>{label}</span>
+                            {type === 'textarea' ? (
+                              <textarea value={editorDraft[field] || ''} onChange={(e) => setEditorDraft((prev) => ({ ...prev, [field]: e.target.value }))} rows={field === 'Final_Script' ? 8 : 3}
+                                className="w-full resize-y rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm leading-relaxed text-slate-100 focus:border-blue-500 focus:outline-none" />
+                            ) : (
+                              <input value={editorDraft[field] || ''} onChange={(e) => setEditorDraft((prev) => ({ ...prev, [field]: e.target.value }))}
+                                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-blue-500 focus:outline-none" />
+                            )}
+                          </label>
+                        ))}
+                        <label className="space-y-1.5 text-xs font-medium text-slate-300">
+                          <span>Status</span>
+                          <select value={editorDraft.Status || 'Draft'} onChange={(e) => setEditorDraft((prev) => ({ ...prev, Status: e.target.value }))} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100">
+                            <option>Draft</option><option>Approved</option><option>Posted</option>
+                          </select>
+                        </label>
+                      </div>
+                      <div className="flex justify-end gap-2 border-t border-slate-700 px-5 py-4">
+                        <button onClick={() => setEditorDraft(null)} className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Batal</button>
+                        <button onClick={handleSaveLibraryEditor} disabled={Boolean(updatingId)} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50">
+                          {updatingId ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Simpan perubahan
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
