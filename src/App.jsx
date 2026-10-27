@@ -211,30 +211,23 @@ export default function App() {
       for (const key of keys) {
         const value = product[key];
         if (value !== undefined && value !== null && String(value).trim()) {
-          return String(value).replace(/\s+/g, ' ').trim();
+          return String(value).trim();
         }
       }
       return fallback;
-    };
-    const compact = (text, maxLength) => {
-      if (text.length <= maxLength) return text;
-      const shortened = text.slice(0, maxLength - 1).replace(/\s+\S*$/, '');
-      return `${shortened || text.slice(0, maxLength - 1)}…`;
     };
     const productBriefs = selectedProducts.map((product, index) => {
       const productId = valueFrom(product, ['Product ID', 'id'], 'ID tiada');
       const productName = valueFrom(product, ['Produk_Name', 'Produk_Name_Full', 'name'], 'Nama produk tiada');
       const brand = valueFrom(product, ['Brand Shop', 'Brand', 'brand'], 'Jenama tiada');
-      const features = valueFrom(product, [
-        'Produk_Description', 'Product_Description', 'Product Description', 'Description',
-        'Key_Features', 'Features', 'Ciri Produk', 'Selling_Points', 'Benefit'
-      ], 'Maklumat ciri produk tiada dalam rekod.');
-      const angle = valueFrom(product, ['Marketing_angle', 'Marketing Angle', 'angle'], '');
-      const review = valueFrom(product, ['Review', 'Customer_Review', 'Customer Review', 'Reviews', 'Ulasan'], 'Tiada ulasan dalam rekod.');
-      const featureSummary = angle && !features.toLowerCase().includes(angle.toLowerCase())
-        ? `${features} Fokus: ${angle}`
-        : features;
-      return `${index + 1}. [${productId}] ${productName} (${brand})\n   - Ciri: ${compact(featureSummary, 220)}\n   - Review: ${compact(review, 180)}`;
+      const identityKeys = new Set(['productid', 'id', 'produkname', 'produknamefull', 'name', 'brandshop', 'brand']);
+      const allOtherFields = Object.entries(product)
+        .filter(([key, value]) => !identityKeys.has(key.toLowerCase().replace(/[\s_-]/g, '')) && value !== undefined && value !== null && String(value).trim())
+        .map(([key, value]) => {
+          const fullValue = typeof value === 'object' ? JSON.stringify(value) : String(value).trim();
+          return `   - ${key}: ${fullValue.replace(/\n/g, '\n     ')}`;
+        });
+      return `${index + 1}. [${productId}] ${productName} (${brand})\n${allOtherFields.length ? allOtherFields.join('\n') : '   - Tiada medan maklumat tambahan dalam rekod.'}`;
     }).join('\n\n');
 
     const prompt = `Sila jalankan Affiliate Factory V3 (Lean Pipeline) untuk produk berikut:
