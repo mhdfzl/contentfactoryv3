@@ -714,7 +714,18 @@ Aliran Kerja:
                           ['Caption', 'Caption', 'textarea'], ['Hashtags', 'Hashtags', 'textarea'],
                         ].map(([field, label, type]) => (
                           <label key={field} className={`space-y-1.5 text-xs font-medium text-slate-300 ${type === 'textarea' ? 'sm:col-span-2' : ''}`}>
-                            <span>{label}</span>
+                            <span className="flex items-center justify-between gap-3">
+                              <span>{label}</span>
+                              {field === 'Final_Script' && (() => {
+                                const liveWordCount = getWordCount(editorDraft.Final_Script || '');
+                                const isInTargetRange = liveWordCount >= 120 && liveWordCount <= 140;
+                                return (
+                                  <span aria-live="polite" className={`rounded-full border px-2 py-1 font-semibold ${isInTargetRange ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' : 'border-amber-500/40 bg-amber-500/10 text-amber-300'}`}>
+                                    {liveWordCount} perkataan {isInTargetRange ? '· Lulus' : '· Sasaran 120–140'}
+                                  </span>
+                                );
+                              })()}
+                            </span>
                             {type === 'textarea' ? (
                               <textarea value={editorDraft[field] || ''} onChange={(e) => setEditorDraft((prev) => ({ ...prev, [field]: e.target.value }))} rows={field === 'Final_Script' ? 8 : 3}
                                 className="w-full resize-y rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm leading-relaxed text-slate-100 focus:border-blue-500 focus:outline-none" />
