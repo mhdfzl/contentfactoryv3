@@ -203,17 +203,56 @@ export default function App() {
   const handleOpenBatchPromptModal = () => {
     if (selectedProductIds.size === 0) return;
 
-    // Extract Product IDs only
-    const idList = Array.from(selectedProductIds).join(', ');
+    const selectedIds = new Set(Array.from(selectedProductIds, String));
+    const selectedProducts = products.filter((product) =>
+      selectedIds.has(String(product['Product ID'] || product['id'] || ''))
+    );
+    const valueFrom = (product, keys, fallback) => {
+      for (const key of keys) {
+        const value = product[key];
+        if (value !== undefined && value !== null && String(value).trim()) {
+          return String(value).replace(/\s+/g, ' ').trim();
+        }
+      }
+      return fallback;
+    };
+    const compact = (text, maxLength) => {
+      if (text.length <= maxLength) return text;
+      const shortened = text.slice(0, maxLength - 1).replace(/\s+\S*$/, '');
+      return `${shortened || text.slice(0, maxLength - 1)}…`;
+    };
+    const productBriefs = selectedProducts.map((product, index) => {
+      const productId = valueFrom(product, ['Product ID', 'id'], 'ID tiada');
+      const productName = valueFrom(product, ['Produk_Name', 'Produk_Name_Full', 'name'], 'Nama produk tiada');
+      const brand = valueFrom(product, ['Brand Shop', 'Brand', 'brand'], 'Jenama tiada');
+      const features = valueFrom(product, [
+        'Produk_Description', 'Product_Description', 'Product Description', 'Description',
+        'Key_Features', 'Features', 'Ciri Produk', 'Selling_Points', 'Benefit'
+      ], 'Maklumat ciri produk tiada dalam rekod.');
+      const angle = valueFrom(product, ['Marketing_angle', 'Marketing Angle', 'angle'], '');
+      const review = valueFrom(product, ['Review', 'Customer_Review', 'Customer Review', 'Reviews', 'Ulasan'], 'Tiada ulasan dalam rekod.');
+      const featureSummary = angle && !features.toLowerCase().includes(angle.toLowerCase())
+        ? `${features} Fokus: ${angle}`
+        : features;
+      return `${index + 1}. [${productId}] ${productName} (${brand})\n   - Ciri: ${compact(featureSummary, 220)}\n   - Review: ${compact(review, 180)}`;
+    }).join('\n\n');
 
-    const prompt = `Sila proses aliran kerja Affiliate Content Factory Siri V3 untuk Product ID berikut:
-${idList}
+    const prompt = `Sila jalankan Affiliate Factory V3 (Lean Pipeline) untuk produk berikut:
 
-Aliran Kerja:
-1. Dav V3: Semak pangkalan data produk dan arkib TikTok_Content_Library.
-2. Tara V3: Tetapkan Target Persona, POV, dan Hook daripada Hooks_Library.
-3. Jess V3: Tulis skrip VO lisan (120-140 patah perkataan, konsistensi POV penuh), caption, hashtags (maks 7), headline, dan subheadline.
-4. Vero V3: Semak pematuhan 12 kriteria. Jika lulus, komit rekod ke Google Sheets TikTok_Content_Library.`;
+${productBriefs}
+
+ARAHAN KERJA:
+1. FASA JANAAN (Tara + Jess):
+   Bagi setiap produk, tentukan terus Target Persona (POV pembeli) dan hasilkan skrip VO santai (120-140 perkataan, POV konsisten dari hook ke CTA, tiada kurungan/visual cues), caption, maksimum 7 hashtag, headline, dan subheadline dalam satu giliran.
+
+2. FASA QA (Vero):
+   Semak kesemua ${selectedProducts.length} produk sekaligus berdasarkan 12 kriteria pematuhan, terutamanya julat 120-140 perkataan dan konsistensi POV. Paparkan rumusan jadual QA ringkas.
+
+3. PEREKODAN:
+   Kumpulkan semua produk yang lulus mengikut 13 lajur piawai TikTok_Content_Library untuk direkodkan sekaligus:
+   Video_ID, Product_ID, Created_At, Hook_Type, Hook, Script, Caption, Hashtags, Headline, Subheadline, Angle, Final_Script, Status.
+
+Gunakan maklumat produk di atas sebagai konteks yang mencukupi. Jangan cari semula maklumat produk di Google Drive atau Google Sheets.`;
 
     setGeneratedPromptText(prompt);
     setIsPromptCopied(false);
@@ -842,7 +881,7 @@ Aliran Kerja:
                 <div>
                   <h3 className="text-base font-bold text-white">Arahan Task Ejen V3</h3>
                   <p className="text-xs text-slate-400">
-                    Format ringkas (Product ID sahaja untuk Dav &amp; Tara V3)
+                    Maklumat produk, fakta dan ulasan disertakan terus dalam prompt
                   </p>
                 </div>
               </div>
