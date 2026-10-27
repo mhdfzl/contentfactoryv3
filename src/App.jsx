@@ -658,14 +658,25 @@ Aliran Kerja:
                             <p className="line-clamp-1 text-sm italic text-slate-400">{item['Hook'] || item['Subheadline'] || script || 'Belum ada preview kandungan.'}</p>
                             <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-400">
                               <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{item['Created_At'] || 'Tarikh tidak tersedia'}</span>
-                              <span className={`rounded border px-2 py-0.5 font-semibold ${qaPass ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-amber-300 bg-amber-50 text-amber-700'}`}>QA: {qaPass ? 'PASS' : `${words} perkataan`}</span>
+                              <span className={`rounded border px-2 py-0.5 font-semibold ${qaPass ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-amber-300 bg-amber-50 text-amber-700'}`}>{words} patah perkataan · QA {qaPass ? 'PASS' : 'SEMAK'}</span>
+                            </div>
+                            <div className="flex flex-wrap gap-2 border-t border-slate-700/70 pt-3">
+                              {[
+                                [`title-${videoId}`, 'Salin Headline & Subheadline', `${headline}\n${item['Subheadline'] || ''}`.trim()],
+                                [`vo-${videoId}`, 'Salin Skrip VO', script],
+                                [`caption-${videoId}`, 'Salin Caption', item['Caption'] || ''],
+                                [`hashtags-${videoId}`, 'Salin Hashtag', item['Hashtags'] || ''],
+                                [`caption-tags-${videoId}`, 'Salin Caption + Hashtag', `${item['Caption'] || ''}\n\n${item['Hashtags'] || ''}`.trim()],
+                              ].map(([copyKey, label, value]) => (
+                                <button key={copyKey} type="button" onClick={() => handleCopyAction(copyKey, value)} disabled={!value}
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-600 bg-slate-900/70 px-2.5 py-1.5 text-[11px] font-medium text-slate-300 hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40">
+                                  {copiedKey === copyKey ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                                  {copiedKey === copyKey ? 'Disalin!' : label}
+                                </button>
+                              ))}
                             </div>
                           </div>
                           <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-                            <button onClick={() => handleCopyAction(`vo-${videoId}`, script)} disabled={!script}
-                              className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-600 disabled:opacity-40">
-                              {copiedKey === `vo-${videoId}` ? 'Disalin!' : 'Salin VO'}
-                            </button>
                             <select value={status} onChange={(e) => handleStatusChange(item, e.target.value)} disabled={isUpdating}
                               className={`rounded-lg border px-2.5 py-2 text-xs font-semibold ${statusClass}`}>
                               <option value="Draft">Draft</option><option value="Approved">Approved</option><option value="Posted">Posted</option>
