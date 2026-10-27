@@ -241,11 +241,28 @@ ARAHAN KERJA:
 2. FASA QA (Vero):
    Semak kesemua ${selectedProducts.length} produk sekaligus berdasarkan 12 kriteria pematuhan, terutamanya julat 120-140 perkataan dan konsistensi POV. Paparkan rumusan jadual QA ringkas.
 
-3. PEREKODAN:
-   Kumpulkan semua produk yang lulus mengikut 13 lajur piawai TikTok_Content_Library untuk direkodkan sekaligus:
-   Video_ID, Product_ID, Created_At, Hook_Type, Hook, Script, Caption, Hashtags, Headline, Subheadline, Angle, Final_Script, Status.
+3. PEREKODAN & AUTO-COMMIT (DAV - WAJIB):
+   - Dav DILARANG menamatkan tugasan dengan hanya memaparkan jadual di chat. Menjana teks tanpa merekodkan data ke Google Sheets dikira sebagai kegagalan sistem.
+   - Selepas Vero mengesahkan status LULUS (PASS) bagi kesemua produk, Dav MESTI membuka fail Google Sheets "TikTok_Content_Library" (Sheet1) dan append semua rekod produk yang lulus ke baris kosong terkini.
+   - Gunakan susunan 13 lajur piawai berikut:
+     1. Video_ID (format: VID-YYYYMMDD-XXX)
+     2. Product_ID
+     3. Created_At (format ISO: YYYY-MM-DDTHH:mm:ss.sssZ)
+     4. Hook_Type
+     5. Hook
+     6. Script
+     7. Caption
+     8. Hashtags
+     9. Headline
+     10. Subheadline
+     11. Angle
+     12. Final_Script (skrip akhir yang lulus QA)
+     13. Status (Approved)
+   - Jangan mendakwa rekod berjaya disimpan sebelum append ke Google Sheets disahkan.
+   - Di akhir respons, Dav wajib melaporkan ringkasan pengesahan dengan format:
+     "STATUS COMMIT: [Bilangan] rekod (Video_ID: VID-XXX hingga VID-YYY) telah berjaya dimasukkan ke TikTok_Content_Library."
 
-Gunakan maklumat produk di atas sebagai konteks yang mencukupi. Jangan cari semula maklumat produk di Google Drive atau Google Sheets.`;
+Gunakan semua maklumat produk di atas sebagai konteks. Jangan cari semula maklumat produk di Google Drive atau Google Sheets.`;
 
     setGeneratedPromptText(prompt);
     setIsPromptCopied(false);
