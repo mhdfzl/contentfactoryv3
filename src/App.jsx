@@ -41,6 +41,41 @@ const normalizeLibraryStatus = (value) => {
   return String(value).trim();
 };
 
+const deduplicateById = (records, getId, label) => {
+  const uniqueRecords = [];
+  const positionsById = new Map();
+  let duplicateCount = 0;
+
+  (Array.isArray(records) ? records : []).forEach((record) => {
+    const id = String(getId(record) ?? '').trim().toUpperCase();
+    if (!id) {
+      uniqueRecords.push(record);
+      return;
+    }
+
+    const existingIndex = positionsById.get(id);
+    if (existingIndex === undefined) {
+      positionsById.set(id, uniqueRecords.length);
+      uniqueRecords.push(record);
+      return;
+    }
+
+    duplicateCount += 1;
+    const existing = uniqueRecords[existingIndex];
+    const existingDate = Date.parse(existing?.['Created_At'] || existing?.['created_at'] || '');
+    const currentDate = Date.parse(record?.['Created_At'] || record?.['created_at'] || '');
+    // Keep the newest copy. If timestamps are missing/equal, keep the last sheet row.
+    if (!Number.isFinite(existingDate) || !Number.isFinite(currentDate) || currentDate >= existingDate) {
+      uniqueRecords[existingIndex] = record;
+    }
+  });
+
+  if (duplicateCount > 0) {
+    console.warn(`${label}: ${duplicateCount} rekod berulang dikesan; hanya rekod terkini dipaparkan.`);
+  }
+  return uniqueRecords;
+};
+
 
 export default function App() {
   // Navigation State
@@ -94,10 +129,10 @@ export default function App() {
       const rawRules = data.rules || data.data?.rules || [];
       const rawLibrary = data.library || data.data?.library || [];
 
-      setProducts(rawProducts);
+      setProducts(deduplicateById(rawProducts, (product) => product['Product ID'] || product['Product_ID'] || product['id'], 'Katalog produk'));
       setHooks(rawHooks);
       setRules(rawRules);
-      setLibrary(rawLibrary);
+      setLibrary(deduplicateById(rawLibrary, (item) => item['Video_ID'] || item['video_id'] || item['id'], 'Output Library'));
     } catch (err) {
       console.error('Fetch Bootstrap Error:', err);
       setError('Gagal menyambung ke pangkalan data Google Sheets: ' + err.message);
