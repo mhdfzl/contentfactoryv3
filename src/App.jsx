@@ -41,15 +41,20 @@ const normalizeLibraryStatus = (value) => {
   return String(value).trim();
 };
 
-const deduplicateById = (records, getId, label) => {
+const getVideoRecordId = (item) => String(item?.['Video_ID'] || item?.['video_id'] || item?.['id'] || '').trim();
+const hasLibraryContent = (item) => ['Product_ID', 'Hook', 'Script', 'Caption', 'Hashtags', 'Headline', 'Subheadline', 'Angle', 'Final_Script']
+  .some((key) => String(item?.[key] ?? '').trim());
+
+const deduplicateById = (records, getId, label, hasContent = () => true) => {
   const uniqueRecords = [];
   const positionsById = new Map();
   let duplicateCount = 0;
+  let discardedCount = 0;
 
   (Array.isArray(records) ? records : []).forEach((record) => {
     const id = String(getId(record) ?? '').trim().toUpperCase();
-    if (!id) {
-      uniqueRecords.push(record);
+    if (!id || !hasContent(record)) {
+      discardedCount += 1;
       return;
     }
 
@@ -70,8 +75,8 @@ const deduplicateById = (records, getId, label) => {
     }
   });
 
-  if (duplicateCount > 0) {
-    console.warn(`${label}: ${duplicateCount} rekod berulang dikesan; hanya rekod terkini dipaparkan.`);
+  if (duplicateCount > 0 || discardedCount > 0) {
+    console.warn(`${label}: ${discardedCount} rekod kosong/tanpa ID dan ${duplicateCount} pendua diketepikan daripada paparan.`);
   }
   return uniqueRecords;
 };
@@ -108,6 +113,7 @@ export default function App() {
   const [generatedPromptText, setGeneratedPromptText] = useState('');
   const [isPromptCopied, setIsPromptCopied] = useState(false);
   const [editorDraft, setEditorDraft] = useState(null);
+  const [libraryNotice, setLibraryNotice] = useState('');
 
   const libraryStatusCounts = useMemo(() => {
     const counts = { ALL: library.length, Draft: 0, Approved: 0, Posted: 0 };
@@ -132,7 +138,15 @@ export default function App() {
       setProducts(deduplicateById(rawProducts, (product) => product['Product ID'] || product['Product_ID'] || product['id'], 'Katalog produk'));
       setHooks(rawHooks);
       setRules(rawRules);
-      setLibrary(deduplicateById(rawLibrary, (item) => item['Video_ID'] || item['video_id'] || item['id'], 'Output Library'));
+      const libraryRows = Array.isArray(rawLibrary) ? rawLibrary : [];
+      const validLibraryRows = libraryRows.filter((item) => getVideoRecordId(item) && hasLibraryContent(item));
+      const cleanLibrary = deduplicateById(validLibraryRows, getVideoRecordId, 'Output Library');
+      const omittedRows = libraryRows.length - validLibraryRows.length;
+      const duplicateRows = validLibraryRows.length - cleanLibrary.length;
+      setLibrary(cleanLibrary);
+      setLibraryNotice(omittedRows || duplicateRows
+        ? `Paparan mengetepikan ${omittedRows} baris kosong/tanpa Video_ID dan ${duplicateRows} rekod dengan Video_ID berulang. Tiada baris dipadam daripada Google Sheets.`
+        : '');
     } catch (err) {
       console.error('Fetch Bootstrap Error:', err);
       setError('Gagal menyambung ke pangkalan data Google Sheets: ' + err.message);
@@ -303,7 +317,7 @@ ARAHAN KERJA:
    - Dav DILARANG menamatkan tugasan dengan hanya memaparkan jadual di chat. Menjana teks tanpa merekodkan data ke Google Sheets dikira sebagai kegagalan sistem.
    - Selepas Vero mengesahkan status LULUS (PASS) bagi kesemua produk, Dav MESTI membuka fail Google Sheets "TikTok_Content_Library" (Sheet1) dan append semua rekod produk yang lulus ke baris kosong terkini.
    - Gunakan susunan 13 lajur piawai berikut:
-     1. Video_ID (format: VID-YYYYMMDD-XXX)
+     1. Video_ID (jana UUID v4 baharu dan unik bagi setiap rekod; format: VID-YYYYMMDD-<UUID>, tarikh menggunakan UTC. Jangan gunakan nombor baris, indeks, kiraan, atau turutan 001 yang boleh berulang selepas rekod dipadam.)
      2. Product_ID
      3. Created_At (format ISO: YYYY-MM-DDTHH:mm:ss.sssZ)
      4. Hook_Type
@@ -740,9 +754,15 @@ Gunakan semua maklumat produk di atas sebagai konteks. Jangan cari semula maklum
                   <span className="rounded-full bg-slate-700 px-2.5 py-0.5 text-xs text-slate-300">{filteredLibrary.length} VIDEO</span>
                 </div>
 
+                {libraryNotice && (
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs leading-relaxed text-amber-200">
+                    {libraryNotice}
+                  </div>
+                )}
+
                 <div className="space-y-3">
-                  {filteredLibrary.map((item, idx) => {
-                    const videoId = item['Video_ID'] || `VID-${idx}`;
+                  {filteredLibrary.map((item) => {
+                    const videoId = getVideoRecordId(item);
                     const productId = item['Product_ID'] || '-';
                     const product = products.find((p) => String(p['Product ID'] || p['id'] || '') === String(productId));
                     const productName = product?.['Produk_Name'] || product?.['Produk_Name_Full'] || product?.['name'] || productId;
