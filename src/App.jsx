@@ -45,6 +45,41 @@ const getVideoRecordId = (item) => String(item?.['Video_ID'] || item?.['video_id
 const hasLibraryContent = (item) => ['Product_ID', 'Hook', 'Script', 'Caption', 'Hashtags', 'Headline', 'Subheadline', 'Angle', 'Final_Script']
   .some((key) => String(item?.[key] ?? '').trim());
 
+const getLibraryContentFingerprint = (item) => ['Hook_Type', 'Hook', 'Script', 'Caption', 'Hashtags', 'Headline', 'Subheadline', 'Angle', 'Final_Script']
+  .map((key) => String(item?.[key] ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase())
+  .join('\u001f');
+
+const deduplicateLibraryContent = (records) => {
+  const contentPositions = new Map();
+  const uniqueRecords = [];
+  (Array.isArray(records) ? records : []).forEach((record) => {
+    const fingerprint = getLibraryContentFingerprint(record);
+    const existingIndex = contentPositions.get(fingerprint);
+    if (existingIndex === undefined) {
+      contentPositions.set(fingerprint, uniqueRecords.length);
+      uniqueRecords.push(record);
+      return;
+    }
+
+    const existing = uniqueRecords[existingIndex];
+    const existingDate = Date.parse(existing?.['Created_At'] || existing?.['created_at'] || '');
+    const currentDate = Date.parse(record?.['Created_At'] || record?.['created_at'] || '');
+    if (!Number.isFinite(existingDate) || !Number.isFinite(currentDate) || currentDate >= existingDate) {
+      uniqueRecords[existingIndex] = record;
+    }
+  });
+  return uniqueRecords;
+};
+
+const getCollidingVideoIds = (records) => {
+  const counts = new Map();
+  records.forEach((record) => {
+    const id = getVideoRecordId(record).toUpperCase();
+    counts.set(id, (counts.get(id) || 0) + 1);
+  });
+  return new Set(Array.from(counts).filter(([, count]) => count > 1).map(([id]) => id));
+};
+
 const deduplicateById = (records, getId, label, hasContent = () => true) => {
   const uniqueRecords = [];
   const positionsById = new Map();
@@ -114,6 +149,7 @@ export default function App() {
   const [isPromptCopied, setIsPromptCopied] = useState(false);
   const [editorDraft, setEditorDraft] = useState(null);
   const [libraryNotice, setLibraryNotice] = useState('');
+  const collidingVideoIds = useMemo(() => getCollidingVideoIds(library), [library]);
 
   const libraryStatusCounts = useMemo(() => {
     const counts = { ALL: library.length, Draft: 0, Approved: 0, Posted: 0 };
@@ -140,12 +176,13 @@ export default function App() {
       setRules(rawRules);
       const libraryRows = Array.isArray(rawLibrary) ? rawLibrary : [];
       const validLibraryRows = libraryRows.filter((item) => getVideoRecordId(item) && hasLibraryContent(item));
-      const cleanLibrary = deduplicateById(validLibraryRows, getVideoRecordId, 'Output Library');
+      const cleanLibrary = deduplicateLibraryContent(validLibraryRows);
       const omittedRows = libraryRows.length - validLibraryRows.length;
-      const duplicateRows = validLibraryRows.length - cleanLibrary.length;
+      const exactDuplicateRows = validLibraryRows.length - cleanLibrary.length;
+      const idCollisionCount = getCollidingVideoIds(cleanLibrary).size;
       setLibrary(cleanLibrary);
-      setLibraryNotice(omittedRows || duplicateRows
-        ? `Paparan mengetepikan ${omittedRows} baris kosong/tanpa Video_ID dan ${duplicateRows} rekod dengan Video_ID berulang. Tiada baris dipadam daripada Google Sheets.`
+      setLibraryNotice(omittedRows || exactDuplicateRows || idCollisionCount
+        ? `Paparan mengetepikan ${omittedRows} baris kosong/tanpa ID dan ${exactDuplicateRows} salinan kandungan tepat. ${idCollisionCount} Video_ID masih digunakan oleh kandungan berlainan; edit/status dikunci untuk kad tersebut. Tiada baris dipadam daripada Google Sheets.`
         : '');
     } catch (err) {
       console.error('Fetch Bootstrap Error:', err);
@@ -387,6 +424,10 @@ Gunakan semua maklumat produk dan kandungan lama yang disertakan sebagai konteks
   const handleStatusChange = async (item, newStatus) => {
     const videoId = item['Video_ID'] || item['id'];
     if (!videoId) return;
+    if (collidingVideoIds.has(String(videoId).trim().toUpperCase())) {
+      showToast(`Video_ID ${videoId} bertindih; status tidak diubah untuk elak mengemas kini rekod yang salah.`);
+      return;
+    }
 
     setUpdatingId(videoId);
     const updatedRecord = {
@@ -450,6 +491,10 @@ Gunakan semua maklumat produk dan kandungan lama yang disertakan sebagai konteks
   const handleSaveLibraryEditor = async () => {
     if (!editorDraft) return;
     const videoId = editorDraft['Video_ID'] || editorDraft['id'];
+    if (collidingVideoIds.has(String(videoId || '').trim().toUpperCase())) {
+      showToast(`Video_ID ${videoId} bertindih; rekod ini perlu dibaiki di Google Sheets sebelum disunting.`);
+      return;
+    }
     setUpdatingId(videoId);
     try {
       await postUpdateScript(editorDraft);
@@ -793,6 +838,7 @@ Gunakan semua maklumat produk dan kandungan lama yang disertakan sebagai konteks
                     const headline = item['Headline'] || 'Headline belum diisi';
                     const script = item['Final_Script'] || item['Script'] || '';
                     const status = normalizeLibraryStatus(getLibraryStatus(item));
+                    const hasIdCollision = collidingVideoIds.has(videoId.toUpperCase());
                     const words = getWordCount(script);
                     const qaPass = words >= 120 && words <= 140;
                     const statusClass = status === 'Posted' ? 'bg-purple-100 text-purple-700' : status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700';
@@ -811,6 +857,7 @@ Gunakan semua maklumat produk dan kandungan lama yang disertakan sebagai konteks
                             <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-400">
                               <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{item['Created_At'] || 'Tarikh tidak tersedia'}</span>
                               <span className={`rounded border px-2 py-0.5 font-semibold ${qaPass ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-amber-300 bg-amber-50 text-amber-700'}`}>{words} patah perkataan · QA {qaPass ? 'PASS' : 'SEMAK'}</span>
+                              {hasIdCollision && <span className="rounded border border-red-400/40 bg-red-500/10 px-2 py-0.5 font-semibold text-red-300">Video_ID bertindih · edit dikunci</span>}
                             </div>
                             <div className="flex flex-wrap gap-2 border-t border-slate-700/70 pt-3">
                               {[
@@ -829,12 +876,14 @@ Gunakan semua maklumat produk dan kandungan lama yang disertakan sebagai konteks
                             </div>
                           </div>
                           <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-                            <select value={status} onChange={(e) => handleStatusChange(item, e.target.value)} disabled={isUpdating}
+                            <select value={status} onChange={(e) => handleStatusChange(item, e.target.value)} disabled={isUpdating || hasIdCollision}
+                              title={hasIdCollision ? 'Video_ID ini digunakan oleh kandungan lain; baiki ID di Google Sheets sebelum mengubah status.' : 'Tukar status'}
                               className={`rounded-lg border px-2.5 py-2 text-xs font-semibold ${statusClass}`}>
                               <option value="Draft">Draft</option><option value="Approved">Approved</option><option value="Posted">Posted</option>
                             </select>
-                            <button onClick={() => openLibraryEditor(item)}
-                              className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-5 py-2.5 text-xs font-bold tracking-wide text-white hover:bg-blue-700">
+                            <button onClick={() => openLibraryEditor(item)} disabled={hasIdCollision}
+                              title={hasIdCollision ? 'Baiki Video_ID bertindih di Google Sheets dahulu.' : 'Buka editor'}
+                              className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-5 py-2.5 text-xs font-bold tracking-wide text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">
                               BUKA <span aria-hidden="true">→</span>
                             </button>
                           </div>
