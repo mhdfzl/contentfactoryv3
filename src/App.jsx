@@ -330,10 +330,13 @@ export default function App() {
       const productId = valueFrom(product, ['Product ID', 'id'], 'ID tiada');
       const productName = valueFrom(product, ['Produk_Name', 'Produk_Name_Full', 'name'], 'Nama produk tiada');
       const brand = valueFrom(product, ['Brand Shop', 'Brand', 'brand'], 'Jenama tiada');
-      const existingIdsToday = library
+      const todayRecords = library
         .filter((item) => String(item['Product_ID'] || '').trim() === productId && String(item['Created_At'] || '').slice(0, 10).replace(/-/g, '') === utcDateStamp)
         .map((item) => getVideoRecordId(item))
         .filter(Boolean);
+      const existingNumbers = todayRecords.map((id) => Number(id.match(/(?:_|-)(\d+)$/)?.[1] || 0)).filter(Number.isFinite);
+      const nextContentNo = String(Math.max(todayRecords.length, ...existingNumbers) + 1).padStart(2, '0');
+      const suggestedVideoId = `VID-${utcDateStamp}_${productId}_${nextContentNo}`;
       const identityKeys = new Set(['productid', 'id', 'produkname', 'produknamefull', 'name', 'brandshop', 'brand']);
       const allOtherFields = Object.entries(product)
         .filter(([key, value]) => !identityKeys.has(key.toLowerCase().replace(/[\s_-]/g, '')) && value !== undefined && value !== null && String(value).trim())
@@ -341,22 +344,21 @@ export default function App() {
           const fullValue = typeof value === 'object' ? JSON.stringify(value) : String(value).trim();
           return `   - ${key}: ${fullValue.replace(/\n/g, '\n     ')}`;
         });
-      const idSequenceHint = existingIdsToday.length
-        ? `\n   - Video_ID produk ini yang sudah digunakan pada ${utcDateStamp}: ${existingIdsToday.join(', ')}. Gunakan nombor seterusnya.`
-        : `\n   - Belum ada Video_ID untuk produk ini pada ${utcDateStamp}; mulakan No_of_content pada 01.`;
-      return `${index + 1}. [${productId}] ${productName} (${brand})${idSequenceHint}\n${allOtherFields.length ? allOtherFields.join('\n') : '   - Tiada medan maklumat tambahan dalam rekod.'}`;
+      return `${index + 1}. [${productId}] ${productName} (${brand})\n   - Cadangan Video_ID: ${suggestedVideoId}\n${allOtherFields.length ? allOtherFields.join('\n') : '   - Tiada medan maklumat tambahan dalam rekod.'}`;
     }).join('\n\n');
 
-    const previousContent = selectedProducts.map((product) => {
+    const previousReferences = selectedProducts.map((product) => {
       const productId = valueFrom(product, ['Product ID', 'id'], 'ID tiada');
-      const previousRecords = library.filter((item) => String(item['Product_ID'] || '').trim() === productId);
-      if (previousRecords.length === 0) return `[${productId}] Tiada kandungan terdahulu dalam Output Library.`;
-      const recordsText = previousRecords.map((item) => {
-        const videoId = getVideoRecordId(item) || 'Video_ID tiada';
-        const priorScript = item['Final_Script'] || item['Script'] || '';
-        return `   - ${videoId} | Hook: ${item['Hook'] || '-'} | Headline: ${item['Headline'] || '-'} | Skrip terdahulu: ${priorScript || '-'}`;
-      }).join('\n');
-      return `[${productId}]\n${recordsText}`;
+      const recentRecords = library
+        .filter((item) => String(item['Product_ID'] || '').trim() === productId)
+        .sort((a, b) => Date.parse(b['Created_At'] || '') - Date.parse(a['Created_At'] || ''))
+        .slice(0, 3);
+      if (recentRecords.length === 0) return `[${productId}] Tiada hook/headline terdahulu.`;
+      const shortText = (value) => {
+        const text = String(value || '-').replace(/\s+/g, ' ').trim();
+        return text.length > 90 ? `${text.slice(0, 87)}…` : text;
+      };
+      return `[${productId}] ${recentRecords.map((item) => `Hook: ${shortText(item['Hook'])}; Headline: ${shortText(item['Headline'])}`).join(' | ')}`;
     }).join('\n\n');
 
     const prompt = `Sila jalankan Affiliate Factory V3 (Lean Pipeline) untuk produk berikut:
@@ -370,9 +372,10 @@ ARAHAN KERJA:
 2. FASA QA (Vero):
    Semak kesemua ${selectedProducts.length} produk sekaligus berdasarkan 12 kriteria pematuhan, terutamanya julat 120-140 perkataan dan konsistensi POV. Paparkan rumusan jadual QA ringkas.
 
-SEMAKAN KANDUNGAN LAMA — WAJIB:
-${previousContent}
-   Gunakan rekod lama ini untuk mengelakkan pengulangan. Jangan salin atau parafrasa ayat lama. Hook, ayat pembuka, susunan hujah, contoh situasi dan CTA mesti menggunakan wording serta angle baharu. Bandingkan juga semua skrip dalam batch ini antara satu sama lain; jika ada ayat/frasa yang sama atau terlalu hampir, tulis semula sehingga jelas berbeza.
+ELAK PENGULANGAN:
+Rujukan hook/headline terkini (maksimum 3 bagi setiap produk):
+${previousReferences}
+   Gunakan wording dan angle baharu. Jangan ulang ayat hook/headline atau ayat skrip dalam batch ini; jika ada frasa yang sama, tulis semula.
 
 3. PEREKODAN & AUTO-COMMIT (DAV - WAJIB):
    - Dav DILARANG menamatkan tugasan dengan hanya memaparkan jadual di chat. Menjana teks tanpa merekodkan data ke Google Sheets dikira sebagai kegagalan sistem.
@@ -395,7 +398,7 @@ ${previousContent}
    - Di akhir respons, Dav wajib melaporkan ringkasan pengesahan dengan format:
      "STATUS COMMIT: [Bilangan] rekod (Video_ID: VID-XXX hingga VID-YYY) telah berjaya dimasukkan ke TikTok_Content_Library."
 
-Gunakan semua maklumat produk dan kandungan lama yang disertakan sebagai konteks. Jangan cari semula maklumat produk atau skrip di Google Drive atau Google Sheets.`;
+Gunakan maklumat produk dan rujukan ringkas di atas. Jangan cari semula maklumat produk di Google Drive atau Google Sheets.`;
 
     setGeneratedPromptText(prompt);
     setIsPromptCopied(false);
