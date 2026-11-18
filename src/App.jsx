@@ -279,6 +279,7 @@ export default function App() {
     const selectedProducts = products.filter((product) =>
       selectedIds.has(String(product['Product ID'] || product['id'] || ''))
     );
+    const utcDateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const valueFrom = (product, keys, fallback) => {
       for (const key of keys) {
         const value = product[key];
@@ -292,6 +293,10 @@ export default function App() {
       const productId = valueFrom(product, ['Product ID', 'id'], 'ID tiada');
       const productName = valueFrom(product, ['Produk_Name', 'Produk_Name_Full', 'name'], 'Nama produk tiada');
       const brand = valueFrom(product, ['Brand Shop', 'Brand', 'brand'], 'Jenama tiada');
+      const existingIdsToday = library
+        .filter((item) => String(item['Product_ID'] || '').trim() === productId && String(item['Created_At'] || '').slice(0, 10).replace(/-/g, '') === utcDateStamp)
+        .map((item) => getVideoRecordId(item))
+        .filter(Boolean);
       const identityKeys = new Set(['productid', 'id', 'produkname', 'produknamefull', 'name', 'brandshop', 'brand']);
       const allOtherFields = Object.entries(product)
         .filter(([key, value]) => !identityKeys.has(key.toLowerCase().replace(/[\s_-]/g, '')) && value !== undefined && value !== null && String(value).trim())
@@ -299,7 +304,22 @@ export default function App() {
           const fullValue = typeof value === 'object' ? JSON.stringify(value) : String(value).trim();
           return `   - ${key}: ${fullValue.replace(/\n/g, '\n     ')}`;
         });
-      return `${index + 1}. [${productId}] ${productName} (${brand})\n${allOtherFields.length ? allOtherFields.join('\n') : '   - Tiada medan maklumat tambahan dalam rekod.'}`;
+      const idSequenceHint = existingIdsToday.length
+        ? `\n   - Video_ID produk ini yang sudah digunakan pada ${utcDateStamp}: ${existingIdsToday.join(', ')}. Gunakan nombor seterusnya.`
+        : `\n   - Belum ada Video_ID untuk produk ini pada ${utcDateStamp}; mulakan No_of_content pada 01.`;
+      return `${index + 1}. [${productId}] ${productName} (${brand})${idSequenceHint}\n${allOtherFields.length ? allOtherFields.join('\n') : '   - Tiada medan maklumat tambahan dalam rekod.'}`;
+    }).join('\n\n');
+
+    const previousContent = selectedProducts.map((product) => {
+      const productId = valueFrom(product, ['Product ID', 'id'], 'ID tiada');
+      const previousRecords = library.filter((item) => String(item['Product_ID'] || '').trim() === productId);
+      if (previousRecords.length === 0) return `[${productId}] Tiada kandungan terdahulu dalam Output Library.`;
+      const recordsText = previousRecords.map((item) => {
+        const videoId = getVideoRecordId(item) || 'Video_ID tiada';
+        const priorScript = item['Final_Script'] || item['Script'] || '';
+        return `   - ${videoId} | Hook: ${item['Hook'] || '-'} | Headline: ${item['Headline'] || '-'} | Skrip terdahulu: ${priorScript || '-'}`;
+      }).join('\n');
+      return `[${productId}]\n${recordsText}`;
     }).join('\n\n');
 
     const prompt = `Sila jalankan Affiliate Factory V3 (Lean Pipeline) untuk produk berikut:
@@ -313,11 +333,15 @@ ARAHAN KERJA:
 2. FASA QA (Vero):
    Semak kesemua ${selectedProducts.length} produk sekaligus berdasarkan 12 kriteria pematuhan, terutamanya julat 120-140 perkataan dan konsistensi POV. Paparkan rumusan jadual QA ringkas.
 
+SEMAKAN KANDUNGAN LAMA — WAJIB:
+${previousContent}
+   Gunakan rekod lama ini untuk mengelakkan pengulangan. Jangan salin atau parafrasa ayat lama. Hook, ayat pembuka, susunan hujah, contoh situasi dan CTA mesti menggunakan wording serta angle baharu. Bandingkan juga semua skrip dalam batch ini antara satu sama lain; jika ada ayat/frasa yang sama atau terlalu hampir, tulis semula sehingga jelas berbeza.
+
 3. PEREKODAN & AUTO-COMMIT (DAV - WAJIB):
    - Dav DILARANG menamatkan tugasan dengan hanya memaparkan jadual di chat. Menjana teks tanpa merekodkan data ke Google Sheets dikira sebagai kegagalan sistem.
    - Selepas Vero mengesahkan status LULUS (PASS) bagi kesemua produk, Dav MESTI membuka fail Google Sheets "TikTok_Content_Library" (Sheet1) dan append semua rekod produk yang lulus ke baris kosong terkini.
    - Gunakan susunan 13 lajur piawai berikut:
-     1. Video_ID (jana UUID v4 baharu dan unik bagi setiap rekod; format: VID-YYYYMMDD-<UUID>, tarikh menggunakan UTC. Jangan gunakan nombor baris, indeks, kiraan, atau turutan 001 yang boleh berulang selepas rekod dipadam.)
+     1. Video_ID (format: VID-YYYYMMDD_ProductID_No_of_content, contoh VID-${utcDateStamp}_${selectedProducts[0] ? valueFrom(selectedProducts[0], ['Product ID', 'id'], 'PRODUCT') : 'PRODUCT'}_01. Tarikh UTC; nombor kandungan bermula 01 bagi setiap produk setiap hari dan bertambah bagi kandungan tambahan pada hari yang sama. Jangan gunakan nombor baris atau indeks.)
      2. Product_ID
      3. Created_At (format ISO: YYYY-MM-DDTHH:mm:ss.sssZ)
      4. Hook_Type
@@ -334,7 +358,7 @@ ARAHAN KERJA:
    - Di akhir respons, Dav wajib melaporkan ringkasan pengesahan dengan format:
      "STATUS COMMIT: [Bilangan] rekod (Video_ID: VID-XXX hingga VID-YYY) telah berjaya dimasukkan ke TikTok_Content_Library."
 
-Gunakan semua maklumat produk di atas sebagai konteks. Jangan cari semula maklumat produk di Google Drive atau Google Sheets.`;
+Gunakan semua maklumat produk dan kandungan lama yang disertakan sebagai konteks. Jangan cari semula maklumat produk atau skrip di Google Drive atau Google Sheets.`;
 
     setGeneratedPromptText(prompt);
     setIsPromptCopied(false);
