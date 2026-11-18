@@ -27,6 +27,20 @@ import {
   Share2
 } from 'lucide-react';
 
+const getLibraryStatus = (item) => {
+  if (item && Object.prototype.hasOwnProperty.call(item, 'Status')) return item.Status;
+  const statusKey = Object.keys(item || {}).find((key) => key.trim().toLowerCase() === 'status');
+  return statusKey ? item[statusKey] : '';
+};
+
+const normalizeLibraryStatus = (value) => {
+  const status = String(value ?? '').trim().toLowerCase().replace(/^(qa|prod|content)\s*:\s*/, '').replace(/[\s_-]+/g, ' ');
+  if (!status || ['draft', 'ai generated', 'generated', 'pending'].includes(status)) return 'Draft';
+  if (['approved', 'approve', 'edited', 'edit', 'qa pass', 'pass', 'passed', 'lulus'].includes(status)) return 'Approved';
+  if (['posted', 'published', 'live'].includes(status)) return 'Posted';
+  return String(value).trim();
+};
+
 
 export default function App() {
   // Navigation State
@@ -59,6 +73,15 @@ export default function App() {
   const [generatedPromptText, setGeneratedPromptText] = useState('');
   const [isPromptCopied, setIsPromptCopied] = useState(false);
   const [editorDraft, setEditorDraft] = useState(null);
+
+  const libraryStatusCounts = useMemo(() => {
+    const counts = { ALL: library.length, Draft: 0, Approved: 0, Posted: 0 };
+    library.forEach((item) => {
+      const status = normalizeLibraryStatus(getLibraryStatus(item));
+      if (Object.hasOwn(counts, status) && status !== 'ALL') counts[status] += 1;
+    });
+    return counts;
+  }, [library]);
 
   const loadData = async (silent = false) => {
     try {
@@ -347,7 +370,7 @@ Gunakan semua maklumat produk di atas sebagai konteks. Jangan cari semula maklum
       Final_Script: script,
       Caption: item['Caption'] || '',
       Hashtags: item['Hashtags'] || '',
-      Status: item['Status'] || 'Draft',
+      Status: normalizeLibraryStatus(getLibraryStatus(item)),
     });
   };
 
@@ -372,14 +395,14 @@ Gunakan semua maklumat produk di atas sebagai konteks. Jangan cari semula maklum
 
   const filteredLibrary = useMemo(() => {
     return library.filter((item) => {
-      const status = item['Status'] || 'Draft';
+      const status = normalizeLibraryStatus(getLibraryStatus(item));
       const videoId = String(item['Video_ID'] || '').toLowerCase();
       const prodId = String(item['Product_ID'] || '').toLowerCase();
       const headline = String(item['Headline'] || '').toLowerCase();
       const script = String(item['Final_Script'] || item['Script'] || '').toLowerCase();
       const q = librarySearch.toLowerCase().trim();
 
-      const matchesStatus = libraryFilterStatus === 'ALL' || status.toLowerCase() === libraryFilterStatus.toLowerCase();
+      const matchesStatus = libraryFilterStatus === 'ALL' || status === libraryFilterStatus;
       const matchesSearch = !q || videoId.includes(q) || prodId.includes(q) || headline.includes(q) || script.includes(q);
 
       return matchesStatus && matchesSearch;
@@ -664,6 +687,7 @@ Gunakan semua maklumat produk di atas sebagai konteks. Jangan cari semula maklum
                       <button key={status} onClick={() => setLibraryFilterStatus(status)}
                         className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${libraryFilterStatus === status ? 'bg-blue-600 text-white' : 'bg-slate-700/60 text-slate-400 hover:text-white'}`}>
                         {status === 'ALL' ? 'Semua' : status}
+                        <span className="ml-1.5 rounded-full bg-slate-950/40 px-1.5 py-0.5 text-[10px]">{libraryStatusCounts[status]}</span>
                       </button>
                     ))}
                   </div>
@@ -689,7 +713,7 @@ Gunakan semua maklumat produk di atas sebagai konteks. Jangan cari semula maklum
                     const productName = product?.['Produk_Name'] || product?.['Produk_Name_Full'] || product?.['name'] || productId;
                     const headline = item['Headline'] || 'Headline belum diisi';
                     const script = item['Final_Script'] || item['Script'] || '';
-                    const status = item['Status'] || 'Draft';
+                    const status = normalizeLibraryStatus(getLibraryStatus(item));
                     const words = getWordCount(script);
                     const qaPass = words >= 120 && words <= 140;
                     const statusClass = status === 'Posted' ? 'bg-purple-100 text-purple-700' : status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700';
@@ -786,7 +810,7 @@ Gunakan semua maklumat produk di atas sebagai konteks. Jangan cari semula maklum
                         ))}
                         <label className="space-y-1.5 text-xs font-medium text-slate-300">
                           <span>Status</span>
-                          <select value={editorDraft.Status || 'Draft'} onChange={(e) => setEditorDraft((prev) => ({ ...prev, Status: e.target.value }))} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100">
+                          <select value={normalizeLibraryStatus(getLibraryStatus(editorDraft))} onChange={(e) => setEditorDraft((prev) => ({ ...prev, Status: e.target.value }))} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100">
                             <option>Draft</option><option>Approved</option><option>Posted</option>
                           </select>
                         </label>
