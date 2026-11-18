@@ -117,6 +117,7 @@ export default function App() {
   const [hooks, setHooks] = useState([]);
   const [rules, setRules] = useState([]);
   const [library, setLibrary] = useState([]);
+  const [knownVideoIds, setKnownVideoIds] = useState([]);
 
   // Loading & Error States
   const [loading, setLoading] = useState(true);
@@ -164,6 +165,7 @@ export default function App() {
       setHooks(rawHooks);
       setRules(rawRules);
       const libraryRows = Array.isArray(rawLibrary) ? rawLibrary : [];
+      setKnownVideoIds(libraryRows.map(getVideoRecordId).filter(Boolean));
       const validLibraryRows = libraryRows.filter((item) => getVideoRecordId(item) && hasLibraryContent(item));
       const cleanLibrary = deduplicateLibraryContent(validLibraryRows);
       setLibrary(cleanLibrary);
@@ -308,18 +310,12 @@ export default function App() {
       }
       return fallback;
     };
-    const usedVideoIds = new Set(library.map(getVideoRecordId).filter(Boolean).map((id) => id.toUpperCase()));
-    let sequence = 1;
-    const nextVideoId = () => {
-      let candidate = `VID-${String(sequence).padStart(3, '0')}`;
-      while (usedVideoIds.has(candidate)) {
-        sequence += 1;
-        candidate = `VID-${String(sequence).padStart(3, '0')}`;
-      }
-      usedVideoIds.add(candidate);
-      sequence += 1;
-      return candidate;
-    };
+    const lastSequence = knownVideoIds.reduce((highest, id) => {
+      const match = id.match(/^VID-(\d+)$/i);
+      return match ? Math.max(highest, Number(match[1])) : highest;
+    }, 0);
+    let sequence = lastSequence + 1;
+    const nextVideoId = () => `VID-${String(sequence++).padStart(3, '0')}`;
     const productBriefs = selectedProducts.map((product, index) => {
       const productId = valueFrom(product, ['Product ID', 'id'], 'ID tiada');
       const productName = valueFrom(product, ['Produk_Name', 'Produk_Name_Full', 'name'], 'Nama produk tiada');
