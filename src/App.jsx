@@ -71,15 +71,6 @@ const deduplicateLibraryContent = (records) => {
   return uniqueRecords;
 };
 
-const getCollidingVideoIds = (records) => {
-  const counts = new Map();
-  records.forEach((record) => {
-    const id = getVideoRecordId(record).toUpperCase();
-    counts.set(id, (counts.get(id) || 0) + 1);
-  });
-  return new Set(Array.from(counts).filter(([, count]) => count > 1).map(([id]) => id));
-};
-
 const deduplicateById = (records, getId, label, hasContent = () => true) => {
   const uniqueRecords = [];
   const positionsById = new Map();
@@ -148,8 +139,6 @@ export default function App() {
   const [generatedPromptText, setGeneratedPromptText] = useState('');
   const [isPromptCopied, setIsPromptCopied] = useState(false);
   const [editorDraft, setEditorDraft] = useState(null);
-  const [libraryNotice, setLibraryNotice] = useState('');
-  const collidingVideoIds = useMemo(() => getCollidingVideoIds(library), [library]);
 
   const libraryStatusCounts = useMemo(() => {
     const counts = { ALL: library.length, Draft: 0, Approved: 0, Posted: 0 };
@@ -177,13 +166,7 @@ export default function App() {
       const libraryRows = Array.isArray(rawLibrary) ? rawLibrary : [];
       const validLibraryRows = libraryRows.filter((item) => getVideoRecordId(item) && hasLibraryContent(item));
       const cleanLibrary = deduplicateLibraryContent(validLibraryRows);
-      const omittedRows = libraryRows.length - validLibraryRows.length;
-      const exactDuplicateRows = validLibraryRows.length - cleanLibrary.length;
-      const idCollisionCount = getCollidingVideoIds(cleanLibrary).size;
       setLibrary(cleanLibrary);
-      setLibraryNotice(omittedRows || exactDuplicateRows || idCollisionCount
-        ? `Paparan mengetepikan ${omittedRows} baris kosong/tanpa ID dan ${exactDuplicateRows} salinan kandungan tepat. ${idCollisionCount} Video_ID masih digunakan oleh kandungan berlainan; edit/status dikunci untuk kad tersebut. Tiada baris dipadam daripada Google Sheets.`
-        : '');
     } catch (err) {
       console.error('Fetch Bootstrap Error:', err);
       setError('Gagal menyambung ke pangkalan data Google Sheets: ' + err.message);
@@ -316,7 +299,6 @@ export default function App() {
     const selectedProducts = products.filter((product) =>
       selectedIds.has(String(product['Product ID'] || product['id'] || ''))
     );
-    const utcDateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const valueFrom = (product, keys, fallback) => {
       for (const key of keys) {
         const value = product[key];
@@ -326,17 +308,23 @@ export default function App() {
       }
       return fallback;
     };
+    const usedVideoIds = new Set(library.map(getVideoRecordId).filter(Boolean).map((id) => id.toUpperCase()));
+    let sequence = 1;
+    const nextVideoId = () => {
+      let candidate = `VID-${String(sequence).padStart(3, '0')}`;
+      while (usedVideoIds.has(candidate)) {
+        sequence += 1;
+        candidate = `VID-${String(sequence).padStart(3, '0')}`;
+      }
+      usedVideoIds.add(candidate);
+      sequence += 1;
+      return candidate;
+    };
     const productBriefs = selectedProducts.map((product, index) => {
       const productId = valueFrom(product, ['Product ID', 'id'], 'ID tiada');
       const productName = valueFrom(product, ['Produk_Name', 'Produk_Name_Full', 'name'], 'Nama produk tiada');
       const brand = valueFrom(product, ['Brand Shop', 'Brand', 'brand'], 'Jenama tiada');
-      const todayRecords = library
-        .filter((item) => String(item['Product_ID'] || '').trim() === productId && String(item['Created_At'] || '').slice(0, 10).replace(/-/g, '') === utcDateStamp)
-        .map((item) => getVideoRecordId(item))
-        .filter(Boolean);
-      const existingNumbers = todayRecords.map((id) => Number(id.match(/(?:_|-)(\d+)$/)?.[1] || 0)).filter(Number.isFinite);
-      const nextContentNo = String(Math.max(todayRecords.length, ...existingNumbers) + 1).padStart(2, '0');
-      const suggestedVideoId = `VID-${utcDateStamp}_${productId}_${nextContentNo}`;
+      const suggestedVideoId = nextVideoId();
       const identityKeys = new Set(['productid', 'id', 'produkname', 'produknamefull', 'name', 'brandshop', 'brand']);
       const allOtherFields = Object.entries(product)
         .filter(([key, value]) => !identityKeys.has(key.toLowerCase().replace(/[\s_-]/g, '')) && value !== undefined && value !== null && String(value).trim())
@@ -344,21 +332,7 @@ export default function App() {
           const fullValue = typeof value === 'object' ? JSON.stringify(value) : String(value).trim();
           return `   - ${key}: ${fullValue.replace(/\n/g, '\n     ')}`;
         });
-      return `${index + 1}. [${productId}] ${productName} (${brand})\n   - Cadangan Video_ID: ${suggestedVideoId}\n${allOtherFields.length ? allOtherFields.join('\n') : '   - Tiada medan maklumat tambahan dalam rekod.'}`;
-    }).join('\n\n');
-
-    const previousReferences = selectedProducts.map((product) => {
-      const productId = valueFrom(product, ['Product ID', 'id'], 'ID tiada');
-      const recentRecords = library
-        .filter((item) => String(item['Product_ID'] || '').trim() === productId)
-        .sort((a, b) => Date.parse(b['Created_At'] || '') - Date.parse(a['Created_At'] || ''))
-        .slice(0, 3);
-      if (recentRecords.length === 0) return `[${productId}] Tiada hook/headline terdahulu.`;
-      const shortText = (value) => {
-        const text = String(value || '-').replace(/\s+/g, ' ').trim();
-        return text.length > 90 ? `${text.slice(0, 87)}…` : text;
-      };
-      return `[${productId}] ${recentRecords.map((item) => `Hook: ${shortText(item['Hook'])}; Headline: ${shortText(item['Headline'])}`).join(' | ')}`;
+      return `${index + 1}. [${productId}] ${productName} (${brand})\n   - Video_ID: ${suggestedVideoId}\n${allOtherFields.length ? allOtherFields.join('\n') : '   - Tiada medan maklumat tambahan dalam rekod.'}`;
     }).join('\n\n');
 
     const prompt = `Sila jalankan Affiliate Factory V3 (Lean Pipeline) untuk produk berikut:
@@ -373,15 +347,13 @@ ARAHAN KERJA:
    Semak kesemua ${selectedProducts.length} produk sekaligus berdasarkan 12 kriteria pematuhan, terutamanya julat 120-140 perkataan dan konsistensi POV. Paparkan rumusan jadual QA ringkas.
 
 ELAK PENGULANGAN:
-Rujukan hook/headline terkini (maksimum 3 bagi setiap produk):
-${previousReferences}
-   Gunakan wording dan angle baharu. Jangan ulang ayat hook/headline atau ayat skrip dalam batch ini; jika ada frasa yang sama, tulis semula.
+Gunakan hook, angle dan ayat skrip yang baharu. Jangan ulang ayat dalam batch ini.
 
 3. PEREKODAN & AUTO-COMMIT (DAV - WAJIB):
    - Dav DILARANG menamatkan tugasan dengan hanya memaparkan jadual di chat. Menjana teks tanpa merekodkan data ke Google Sheets dikira sebagai kegagalan sistem.
    - Selepas Vero mengesahkan status LULUS (PASS) bagi kesemua produk, Dav MESTI membuka fail Google Sheets "TikTok_Content_Library" (Sheet1) dan append semua rekod produk yang lulus ke baris kosong terkini.
    - Gunakan susunan 13 lajur piawai berikut:
-     1. Video_ID (format: VID-YYYYMMDD_ProductID_No_of_content, contoh VID-${utcDateStamp}_${selectedProducts[0] ? valueFrom(selectedProducts[0], ['Product ID', 'id'], 'PRODUCT') : 'PRODUCT'}_01. Tarikh UTC; nombor kandungan bermula 01 bagi setiap produk setiap hari dan bertambah bagi kandungan tambahan pada hari yang sama. Jangan gunakan nombor baris atau indeks.)
+     1. Video_ID: gunakan nombor ringkas yang sudah dicadangkan pada setiap produk (VID-001, VID-002, dan seterusnya). Kekalkan nombor itu semasa append.
      2. Product_ID
      3. Created_At (format ISO: YYYY-MM-DDTHH:mm:ss.sssZ)
      4. Hook_Type
@@ -398,7 +370,7 @@ ${previousReferences}
    - Di akhir respons, Dav wajib melaporkan ringkasan pengesahan dengan format:
      "STATUS COMMIT: [Bilangan] rekod (Video_ID: VID-XXX hingga VID-YYY) telah berjaya dimasukkan ke TikTok_Content_Library."
 
-Gunakan maklumat produk dan rujukan ringkas di atas. Jangan cari semula maklumat produk di Google Drive atau Google Sheets.`;
+Gunakan maklumat produk di atas. Jangan cari semula maklumat produk di Google Drive atau Google Sheets.`;
 
     setGeneratedPromptText(prompt);
     setIsPromptCopied(false);
@@ -427,11 +399,6 @@ Gunakan maklumat produk dan rujukan ringkas di atas. Jangan cari semula maklumat
   const handleStatusChange = async (item, newStatus) => {
     const videoId = item['Video_ID'] || item['id'];
     if (!videoId) return;
-    if (collidingVideoIds.has(String(videoId).trim().toUpperCase())) {
-      showToast(`Video_ID ${videoId} bertindih; status tidak diubah untuk elak mengemas kini rekod yang salah.`);
-      return;
-    }
-
     setUpdatingId(videoId);
     const updatedRecord = {
       ...item,
@@ -494,10 +461,6 @@ Gunakan maklumat produk dan rujukan ringkas di atas. Jangan cari semula maklumat
   const handleSaveLibraryEditor = async () => {
     if (!editorDraft) return;
     const videoId = editorDraft['Video_ID'] || editorDraft['id'];
-    if (collidingVideoIds.has(String(videoId || '').trim().toUpperCase())) {
-      showToast(`Video_ID ${videoId} bertindih; rekod ini perlu dibaiki di Google Sheets sebelum disunting.`);
-      return;
-    }
     setUpdatingId(videoId);
     try {
       await postUpdateScript(editorDraft);
@@ -826,12 +789,6 @@ Gunakan maklumat produk dan rujukan ringkas di atas. Jangan cari semula maklumat
                   <span className="rounded-full bg-slate-700 px-2.5 py-0.5 text-xs text-slate-300">{filteredLibrary.length} VIDEO</span>
                 </div>
 
-                {libraryNotice && (
-                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs leading-relaxed text-amber-200">
-                    {libraryNotice}
-                  </div>
-                )}
-
                 <div className="space-y-3">
                   {filteredLibrary.map((item) => {
                     const videoId = getVideoRecordId(item);
@@ -841,7 +798,6 @@ Gunakan maklumat produk dan rujukan ringkas di atas. Jangan cari semula maklumat
                     const headline = item['Headline'] || 'Headline belum diisi';
                     const script = item['Final_Script'] || item['Script'] || '';
                     const status = normalizeLibraryStatus(getLibraryStatus(item));
-                    const hasIdCollision = collidingVideoIds.has(videoId.toUpperCase());
                     const words = getWordCount(script);
                     const qaPass = words >= 120 && words <= 140;
                     const statusClass = status === 'Posted' ? 'bg-purple-100 text-purple-700' : status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700';
@@ -860,7 +816,6 @@ Gunakan maklumat produk dan rujukan ringkas di atas. Jangan cari semula maklumat
                             <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-400">
                               <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{item['Created_At'] || 'Tarikh tidak tersedia'}</span>
                               <span className={`rounded border px-2 py-0.5 font-semibold ${qaPass ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-amber-300 bg-amber-50 text-amber-700'}`}>{words} patah perkataan · QA {qaPass ? 'PASS' : 'SEMAK'}</span>
-                              {hasIdCollision && <span className="rounded border border-red-400/40 bg-red-500/10 px-2 py-0.5 font-semibold text-red-300">Video_ID bertindih · edit dikunci</span>}
                             </div>
                             <div className="flex flex-wrap gap-2 border-t border-slate-700/70 pt-3">
                               {[
@@ -879,13 +834,13 @@ Gunakan maklumat produk dan rujukan ringkas di atas. Jangan cari semula maklumat
                             </div>
                           </div>
                           <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-                            <select value={status} onChange={(e) => handleStatusChange(item, e.target.value)} disabled={isUpdating || hasIdCollision}
-                              title={hasIdCollision ? 'Video_ID ini digunakan oleh kandungan lain; baiki ID di Google Sheets sebelum mengubah status.' : 'Tukar status'}
+                            <select value={status} onChange={(e) => handleStatusChange(item, e.target.value)} disabled={isUpdating}
+                              title="Tukar status"
                               className={`rounded-lg border px-2.5 py-2 text-xs font-semibold ${statusClass}`}>
                               <option value="Draft">Draft</option><option value="Approved">Approved</option><option value="Posted">Posted</option>
                             </select>
-                            <button onClick={() => openLibraryEditor(item)} disabled={hasIdCollision}
-                              title={hasIdCollision ? 'Baiki Video_ID bertindih di Google Sheets dahulu.' : 'Buka editor'}
+                            <button onClick={() => openLibraryEditor(item)}
+                              title="Buka editor"
                               className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-5 py-2.5 text-xs font-bold tracking-wide text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">
                               BUKA <span aria-hidden="true">→</span>
                             </button>
